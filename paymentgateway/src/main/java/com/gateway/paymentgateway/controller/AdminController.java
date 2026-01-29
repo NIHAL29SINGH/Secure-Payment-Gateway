@@ -1,8 +1,7 @@
 package com.gateway.paymentgateway.controller;
 
-import com.gateway.paymentgateway.dto.response.AdminUserResponse;
+import com.gateway.paymentgateway.dto.response.KycAdminResponse;
 import com.gateway.paymentgateway.dto.response.UserResponse;
-import com.gateway.paymentgateway.entity.UserKyc;
 import com.gateway.paymentgateway.service.AdminService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -17,10 +16,6 @@ import java.util.List;
 public class AdminController {
 
     private final AdminService adminService;
-
-    // ==============================
-    // USER MANAGEMENT
-    // ==============================
 
     @GetMapping("/users")
     public List<UserResponse> getAllUsers() {
@@ -40,40 +35,39 @@ public class AdminController {
     @PutMapping("/users/{id}/disable")
     public String disableUser(@PathVariable Long id) {
         adminService.disableUser(id);
-        return "User disabled successfully";
+        return "User disabled";
     }
 
     @PutMapping("/users/{id}/enable")
     public String enableUser(@PathVariable Long id) {
         adminService.enableUser(id);
-        return "User enabled successfully";
+        return "User enabled";
     }
 
     @DeleteMapping("/users/{id}")
     public String deleteUser(@PathVariable Long id) {
         adminService.deleteUser(id);
-        return "User deleted successfully";
+        return "User deleted";
     }
 
-    // ==============================
-    // KYC SECTION
-    // ==============================
-
+    // ✅ FIXED KYC ENDPOINT
     @GetMapping("/kyc/{userId}")
-    public UserKyc getUserKyc(@PathVariable Long userId) {
+    public KycAdminResponse getUserKyc(@PathVariable Long userId) {
         return adminService.getUserKyc(userId);
     }
 
-    @PostMapping("/kyc/approve")
-    public String approveKyc(@RequestParam String token) {
-        adminService.approveKyc(token);
+    @PostMapping("/kyc/approve/{userId}")
+    public String approveKyc(@PathVariable Long userId) {
+        adminService.approveKycByUserId(userId);
         return "KYC approved successfully";
     }
 
-    @PostMapping("/kyc/reject")
-    public String rejectKyc(@RequestParam String token,
-                            @RequestParam String reason) {
-        adminService.rejectKyc(token, reason);
+    @PostMapping("/kyc/reject/{userId}")
+    public String rejectKyc(
+            @PathVariable Long userId,
+            @RequestParam String reason
+    ) {
+        adminService.rejectKyc(userId, reason);
         return "KYC rejected";
     }
 }

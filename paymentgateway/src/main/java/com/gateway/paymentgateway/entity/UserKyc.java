@@ -8,14 +8,17 @@ import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "user_kyc")
-@Getter @Setter
+@Getter
+@Setter
+@NoArgsConstructor
 public class UserKyc {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @OneToOne
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", unique = true)
     private User user;
 
     private String fatherName;
@@ -26,7 +29,7 @@ public class UserKyc {
     private String ifsc;
 
     @Enumerated(EnumType.STRING)
-    private KycStatus status;
+    private KycStatus status = KycStatus.NOT_SUBMITTED;
 
     private LocalDateTime createdAt;
 

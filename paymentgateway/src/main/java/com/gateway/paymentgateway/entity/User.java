@@ -8,7 +8,9 @@ import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "users")
-@Getter @Setter
+@Getter
+@Setter
+@NoArgsConstructor
 public class User {
 
     @Id
@@ -16,24 +18,20 @@ public class User {
     private Long id;
 
     private String name;
+
+    @Column(unique = true, nullable = false)
     private String email;
+
     private String password;
 
-    private boolean emailVerified;
-    private boolean googleVerified;
-    private boolean active;
-    @CreationTimestamp
-    @Column(nullable = false, updatable = false)
-
-    private LocalDateTime createdAt;
+    private boolean emailVerified = false;
+    private boolean googleVerified = false;
+    private boolean active = true;
 
     @Enumerated(EnumType.STRING)
     private Role role;
 
-
-
-
-
-    }
-
-
+    @CreationTimestamp
+    @Column(nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+}

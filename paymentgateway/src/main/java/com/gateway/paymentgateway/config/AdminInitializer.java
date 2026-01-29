@@ -5,16 +5,15 @@ import com.gateway.paymentgateway.entity.User;
 import com.gateway.paymentgateway.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
-import jakarta.annotation.PostConstruct;
-
 @Configuration
 @RequiredArgsConstructor
-public class AdminInitializer {
+public class AdminInitializer implements CommandLineRunner {
 
-    private final UserRepository userRepo;
+    private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
 
     @Value("${admin.email}")
@@ -23,10 +22,11 @@ public class AdminInitializer {
     @Value("${admin.password}")
     private String adminPassword;
 
-    @PostConstruct
-    public void createAdmin() {
+    @Override
+    public void run(String... args) {
 
-        if (userRepo.findByEmail(adminEmail).isPresent()) {
+        if (userRepository.findByEmail(adminEmail).isPresent()) {
+            System.out.println("✅ Admin already exists");
             return;
         }
 
@@ -37,9 +37,10 @@ public class AdminInitializer {
         admin.setActive(true);
         admin.setEmailVerified(true);
         admin.setGoogleVerified(false);
+        admin.setName("System Admin");
 
-        userRepo.save(admin);
+        userRepository.save(admin);
 
-        System.out.println("✅ Admin account created: " + adminEmail);
+        System.out.println("✅ Admin account created successfully");
     }
 }

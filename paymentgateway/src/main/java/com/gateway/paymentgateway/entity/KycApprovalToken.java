@@ -8,6 +8,7 @@ import java.time.LocalDateTime;
 @Entity
 @Getter
 @Setter
+@NoArgsConstructor
 public class KycApprovalToken {
 
     @Id
@@ -19,7 +20,7 @@ public class KycApprovalToken {
     @OneToOne
     private User user;
 
-    private boolean used;
+    private boolean used = false;
 
     private LocalDateTime expiry;
 }

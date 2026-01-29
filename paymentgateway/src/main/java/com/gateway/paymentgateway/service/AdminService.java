@@ -1,5 +1,6 @@
 package com.gateway.paymentgateway.service;
 
+import com.gateway.paymentgateway.dto.response.KycAdminResponse;
 import com.gateway.paymentgateway.dto.response.UserResponse;
 import com.gateway.paymentgateway.entity.*;
 import com.gateway.paymentgateway.repository.KycApprovalTokenRepository;
@@ -22,9 +23,7 @@ public class AdminService {
     private final KycApprovalTokenRepository tokenRepo;
     private final EmailService emailService;
 
-    // =========================
-    // USER MANAGEMENT
-    // =========================
+    // ================= USER =================
 
     public List<UserResponse> getAllUsers() {
         return userRepo.findAll()
@@ -65,69 +64,70 @@ public class AdminService {
         userRepo.deleteById(id);
     }
 
-    // =========================
-    // KYC SECTION
-    // =========================
+    // ================= KYC =================
 
-    public UserKyc getUserKyc(Long userId) {
-        return kycRepo.findByUserId(userId)
+    public KycAdminResponse getUserKyc(Long userId) {
+
+        User user = userRepo.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        UserKyc kyc = kycRepo.findByUserId(userId)
                 .orElseThrow(() -> new RuntimeException("KYC not found"));
+
+        KycAdminResponse res = new KycAdminResponse();
+        res.setUserId(user.getId());
+        res.setEmail(user.getEmail());
+        res.setName(user.getName());
+        res.setFatherName(kyc.getFatherName());
+        res.setDob(kyc.getDob());
+        res.setAddress(kyc.getAddress());
+        res.setPanNumber(kyc.getPanNumber());
+        res.setBankAccount(kyc.getBankAccount());
+        res.setIfsc(kyc.getIfsc());
+        res.setStatus(kyc.getStatus());
+
+        return res;
     }
 
-    public void approveKyc(String token) {
+    public void approveKycByUserId(Long userId) {
 
-        KycApprovalToken approval =
-                tokenRepo.findByToken(token)
-                        .orElseThrow(() -> new RuntimeException("Invalid token"));
+        User user = userRepo.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
 
-        if (approval.isUsed() ||
-                approval.getExpiry().isBefore(LocalDateTime.now())) {
-            throw new RuntimeException("Token expired or already used");
-        }
-
-        User user = approval.getUser();
-        UserKyc kyc = kycRepo.findByUserId(user.getId())
+        UserKyc kyc = kycRepo.findByUserId(userId)
                 .orElseThrow(() -> new RuntimeException("KYC not found"));
 
-        if (kyc.getStatus() == KycStatus.APPROVED) {
-            throw new RuntimeException("KYC already approved");
-        }
+        if (kyc.getStatus() == KycStatus.APPROVED)
+            throw new RuntimeException("Already approved");
 
         kyc.setStatus(KycStatus.APPROVED);
         user.setActive(true);
-        approval.setUsed(true);
 
         kycRepo.save(kyc);
         userRepo.save(user);
-        tokenRepo.save(approval);
 
         emailService.send(
                 user.getEmail(),
                 "KYC Approved",
-                "Your KYC has been approved. You can now make payments securely."
+                "Your KYC is approved. You can now make payments."
         );
     }
 
-    public void rejectKyc(String token, String reason) {
+    public void rejectKyc(Long userId, String reason) {
 
-        KycApprovalToken approval =
-                tokenRepo.findByToken(token)
-                        .orElseThrow(() -> new RuntimeException("Invalid token"));
+        User user = userRepo.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
 
-        User user = approval.getUser();
-        UserKyc kyc = kycRepo.findByUserId(user.getId())
+        UserKyc kyc = kycRepo.findByUserId(userId)
                 .orElseThrow(() -> new RuntimeException("KYC not found"));
 
         kyc.setStatus(KycStatus.REJECTED);
-        approval.setUsed(true);
-
         kycRepo.save(kyc);
-        tokenRepo.save(approval);
 
         emailService.send(
                 user.getEmail(),
                 "KYC Rejected",
-                "Your KYC was rejected.\nReason: " + reason
+                "Reason: " + reason
         );
     }
 }
