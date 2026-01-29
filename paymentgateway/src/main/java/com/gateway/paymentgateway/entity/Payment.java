@@ -24,7 +24,7 @@ public class Payment {
 
     private String status; // CREATED, SUCCESS, FAILED
 
-    private String receiver; // who received payment
+    private String receiver;
 
     private LocalDateTime createdAt;
 
