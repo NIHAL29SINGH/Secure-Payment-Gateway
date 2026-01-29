@@ -1,15 +1,15 @@
 package com.gateway.paymentgateway.entity;
 
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.Setter;
-
+import lombok.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "payments")
 @Getter
 @Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Table(name = "payments")
 public class Payment {
 
     @Id
@@ -18,19 +18,16 @@ public class Payment {
 
     private String razorpayOrderId;
     private String razorpayPaymentId;
-    private String razorpaySignature;
 
     private Double amount;
     private String currency;
 
-    @Enumerated(EnumType.STRING)
-    private PaymentStatus status;
+    private String status; // CREATED, SUCCESS, FAILED
 
-    private String idempotencyKey;
-
-    @ManyToOne
-    @JoinColumn(name = "user_id")
-    private User user;
+    private String receiver; // who received payment
 
     private LocalDateTime createdAt;
+
+    @ManyToOne
+    private User user;
 }
