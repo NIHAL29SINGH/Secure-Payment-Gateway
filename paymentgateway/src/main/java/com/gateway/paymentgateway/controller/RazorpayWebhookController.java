@@ -1,7 +1,6 @@
 package com.gateway.paymentgateway.controller;
 
-import com.gateway.paymentgateway.entity.Payment;
-import com.gateway.paymentgateway.repository.PaymentRepository;
+import com.gateway.paymentgateway.service.PaymentService;
 import com.razorpay.Utils;
 import lombok.RequiredArgsConstructor;
 import org.json.JSONObject;
@@ -9,7 +8,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.servlet.http.HttpServletRequest;
-import java.io.BufferedReader;
 import java.util.stream.Collectors;
 
 @RestController
@@ -17,49 +15,43 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class RazorpayWebhookController {
 
-    private final PaymentRepository paymentRepo;
+    private final PaymentService paymentService;
 
     @Value("${razorpay.webhook.secret}")
     private String webhookSecret;
 
     @PostMapping("/webhook")
     public String handleWebhook(HttpServletRequest request,
-                                @RequestHeader("X-Razorpay-Signature") String signature) throws Exception {
+                                @RequestHeader("X-Razorpay-Signature") String signature)
+            throws Exception {
 
         String payload = request.getReader()
                 .lines()
                 .collect(Collectors.joining());
 
-        boolean isValid = Utils.verifyWebhookSignature(
+        boolean valid = Utils.verifyWebhookSignature(
                 payload,
                 signature,
                 webhookSecret
         );
 
-        if (!isValid)
-            throw new RuntimeException("Invalid webhook signature");
+        if (!valid)
+            throw new RuntimeException("Invalid webhook");
 
         JSONObject json = new JSONObject(payload);
         String event = json.getString("event");
 
-        if (event.equals("payment.captured")) {
+        if ("payment.captured".equals(event)) {
 
-            JSONObject paymentObj =
+            JSONObject entity =
                     json.getJSONObject("payload")
                             .getJSONObject("payment")
                             .getJSONObject("entity");
 
-            String orderId = paymentObj.getString("order_id");
-            String paymentId = paymentObj.getString("id");
+            String orderId = entity.getString("order_id");
+            String paymentId = entity.getString("id");
 
-            Payment payment =
-                    paymentRepo.findByRazorpayOrderId(orderId);
-
-            if (payment != null) {
-                payment.setStatus("SUCCESS");
-                payment.setRazorpayPaymentId(paymentId);
-                paymentRepo.save(payment);
-            }
+            paymentService.markPaymentSuccess(orderId, paymentId);
         }
 
         return "OK";

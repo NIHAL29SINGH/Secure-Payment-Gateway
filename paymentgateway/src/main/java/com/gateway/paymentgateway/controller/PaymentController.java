@@ -4,9 +4,8 @@ import com.gateway.paymentgateway.entity.User;
 import com.gateway.paymentgateway.service.PaymentService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.Map;
 
 @RestController
 @RequestMapping("/api/payment")
@@ -15,22 +14,14 @@ public class PaymentController {
 
     private final PaymentService paymentService;
 
-    // Create Razorpay Order
     @PostMapping("/create")
     public Object createPayment(
-            @AuthenticationPrincipal User user,
+            @AuthenticationPrincipal UserDetails principal,
             @RequestParam Double amount
-    ) throws Exception {
-        return paymentService.createOrder(user, amount);
-    }
-
-    // Payment Success Callback
-    @PostMapping("/verify")
-    public String verifyPayment(
-            @RequestParam String orderId,
-            @RequestParam String paymentId
     ) {
-        paymentService.verifyPayment(orderId, paymentId);
-        return "Payment Successful";
+        return paymentService.createOrder(
+                (User) principal, // ✔ your CustomUserDetails returns User
+                amount
+        );
     }
 }

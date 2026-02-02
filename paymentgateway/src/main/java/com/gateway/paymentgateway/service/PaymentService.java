@@ -1,13 +1,14 @@
 package com.gateway.paymentgateway.service;
 
+import com.gateway.paymentgateway.entity.KycStatus;
 import com.gateway.paymentgateway.entity.Payment;
 import com.gateway.paymentgateway.entity.User;
 import com.gateway.paymentgateway.repository.PaymentRepository;
+import com.gateway.paymentgateway.repository.UserKycRepository;
 import com.razorpay.Order;
 import com.razorpay.RazorpayClient;
 import lombok.RequiredArgsConstructor;
 import org.json.JSONObject;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -18,36 +19,44 @@ public class PaymentService {
 
     private final RazorpayClient razorpayClient;
     private final PaymentRepository paymentRepo;
+    private final UserKycRepository kycRepo;
 
-    @Value("${razorpay.currency}")
-    private String currency;
+    // ✅ CREATE PAYMENT ORDER
+    public Payment createOrder(User user, Double amount) {
 
-    public Order createOrder(User user, Double amount) throws Exception {
+        // 🔐 KYC CHECK
+        var kyc = kycRepo.findByUserId(user.getId())
+                .orElseThrow(() -> new RuntimeException("KYC not submitted"));
 
-        if (!user.isActive())
-            throw new RuntimeException("KYC not approved");
+        if (kyc.getStatus() != KycStatus.APPROVED) {
+            throw new RuntimeException("KYC not approved. Payment not allowed.");
+        }
 
-        JSONObject options = new JSONObject();
-        options.put("amount", amount * 100); // paisa
-        options.put("currency", currency);
-        options.put("receipt", "txn_" + System.currentTimeMillis());
+        try {
+            JSONObject options = new JSONObject();
+            options.put("amount", amount * 100);
+            options.put("currency", "INR");
+            options.put("receipt", "rcpt_" + System.currentTimeMillis());
 
-        Order order = razorpayClient.orders.create(options);
+            Order order = razorpayClient.orders.create(options);
 
-        Payment payment = new Payment();
-        payment.setUser(user);
-        payment.setAmount(amount);
-        payment.setCurrency(currency);
-        payment.setRazorpayOrderId(order.get("id"));
-        payment.setStatus("CREATED");
-        payment.setCreatedAt(LocalDateTime.now());
+            Payment payment = new Payment();
+            payment.setUser(user);
+            payment.setAmount(amount);
+            payment.setCurrency("INR");
+            payment.setRazorpayOrderId(order.get("id"));
+            payment.setStatus("CREATED");
+            payment.setCreatedAt(LocalDateTime.now());
 
-        paymentRepo.save(payment);
+            return paymentRepo.save(payment);
 
-        return order;
+        } catch (Exception e) {
+            throw new RuntimeException("Payment creation failed");
+        }
     }
 
-    public void verifyPayment(String orderId, String paymentId) {
+    // ✅ VERIFY PAYMENT (used by webhook)
+    public void markPaymentSuccess(String orderId, String paymentId) {
 
         Payment payment = paymentRepo.findByRazorpayOrderId(orderId);
 
