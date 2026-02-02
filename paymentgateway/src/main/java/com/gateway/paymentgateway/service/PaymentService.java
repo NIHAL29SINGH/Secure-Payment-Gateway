@@ -5,6 +5,7 @@ import com.gateway.paymentgateway.entity.Payment;
 import com.gateway.paymentgateway.entity.User;
 import com.gateway.paymentgateway.repository.PaymentRepository;
 import com.gateway.paymentgateway.repository.UserKycRepository;
+import com.gateway.paymentgateway.repository.UserRepository;
 import com.razorpay.Order;
 import com.razorpay.RazorpayClient;
 import lombok.RequiredArgsConstructor;
@@ -20,8 +21,11 @@ public class PaymentService {
     private final RazorpayClient razorpayClient;
     private final PaymentRepository paymentRepo;
     private final UserKycRepository kycRepo;
+    private final UserRepository userRepository;
 
-    // ✅ CREATE PAYMENT ORDER
+    // ============================
+    // ✅ CREATE PAYMENT ORDER (MAIN LOGIC)
+    // ============================
     public Payment createOrder(User user, Double amount) {
 
         // 🔐 KYC CHECK
@@ -34,7 +38,7 @@ public class PaymentService {
 
         try {
             JSONObject options = new JSONObject();
-            options.put("amount", amount * 100);
+            options.put("amount", amount * 100); // Razorpay works in paise
             options.put("currency", "INR");
             options.put("receipt", "rcpt_" + System.currentTimeMillis());
 
@@ -51,17 +55,32 @@ public class PaymentService {
             return paymentRepo.save(payment);
 
         } catch (Exception e) {
-            throw new RuntimeException("Payment creation failed");
+            throw new RuntimeException("Payment creation failed", e);
         }
     }
 
-    // ✅ VERIFY PAYMENT (used by webhook)
+    // ============================
+    // ✅ CREATE PAYMENT ORDER (FROM CONTROLLER)
+    // ============================
+    public Payment createOrder(String email, Double amount) {
+
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        // 🔁 Delegate to existing logic
+        return createOrder(user, amount);
+    }
+
+    // ============================
+    // ✅ VERIFY PAYMENT (WEBHOOK)
+    // ============================
     public void markPaymentSuccess(String orderId, String paymentId) {
 
         Payment payment = paymentRepo.findByRazorpayOrderId(orderId);
 
-        if (payment == null)
+        if (payment == null) {
             throw new RuntimeException("Payment not found");
+        }
 
         payment.setRazorpayPaymentId(paymentId);
         payment.setStatus("SUCCESS");
