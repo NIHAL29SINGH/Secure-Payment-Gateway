@@ -1,13 +1,16 @@
 package com.gateway.paymentgateway.controller;
 
+import com.gateway.paymentgateway.entity.Payment;
+import com.gateway.paymentgateway.repository.PaymentRepository;
+import com.gateway.paymentgateway.repository.UserRepository;
 import com.gateway.paymentgateway.service.PaymentService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/payment")
@@ -15,18 +18,28 @@ import org.springframework.web.bind.annotation.RestController;
 public class PaymentController {
 
     private final PaymentService paymentService;
+    private final UserRepository userRepository;
+    private final PaymentRepository paymentRepository;
 
+    // ✅ BACKEND-ONLY PAYMENT CREATION
     @PostMapping("/create")
-    public Object createPayment(
+    public Map<String, Object> createPayment(
             @AuthenticationPrincipal UserDetails principal,
             @RequestParam Double amount
     ) {
-        // ✅ Spring Security gives UserDetails, NOT your entity
-        String email = principal.getUsername();
-
-        return paymentService.createOrder(
-                email,
+        return paymentService.createPayment(
+                principal.getUsername(),
                 amount
         );
+    }
+    @GetMapping("/history")
+    public List<Payment> getMyPayments(
+            @AuthenticationPrincipal UserDetails principal
+    ) {
+
+        var user = userRepository.findByEmail(principal.getUsername())
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        return paymentRepository.findByUserId(user.getId());
     }
 }

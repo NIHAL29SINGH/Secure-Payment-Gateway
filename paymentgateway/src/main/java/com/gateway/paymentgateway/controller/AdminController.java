@@ -2,6 +2,8 @@ package com.gateway.paymentgateway.controller;
 
 import com.gateway.paymentgateway.dto.response.KycAdminResponse;
 import com.gateway.paymentgateway.dto.response.UserResponse;
+import com.gateway.paymentgateway.entity.Payment;
+import com.gateway.paymentgateway.repository.PaymentRepository;
 import com.gateway.paymentgateway.service.AdminService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -16,6 +18,7 @@ import java.util.List;
 public class AdminController {
 
     private final AdminService adminService;
+    private final PaymentRepository paymentRepository;
 
     @GetMapping("/users")
     public List<UserResponse> getAllUsers() {
@@ -69,5 +72,16 @@ public class AdminController {
     ) {
         adminService.rejectKyc(userId, reason);
         return "KYC rejected";
+    }
+
+
+    // ==============================
+    // ✅ ADMIN: USER PAYMENT HISTORY
+    // ==============================
+    @GetMapping("/payments/{userId}")
+    public List<Payment> getUserPayments(
+            @PathVariable Long userId
+    ) {
+        return paymentRepository.findByUserId(userId);
     }
 }

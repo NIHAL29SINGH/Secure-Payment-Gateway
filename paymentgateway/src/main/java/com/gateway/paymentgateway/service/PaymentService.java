@@ -1,11 +1,7 @@
 package com.gateway.paymentgateway.service;
 
-import com.gateway.paymentgateway.entity.KycStatus;
-import com.gateway.paymentgateway.entity.Payment;
-import com.gateway.paymentgateway.entity.User;
-import com.gateway.paymentgateway.repository.PaymentRepository;
-import com.gateway.paymentgateway.repository.UserKycRepository;
-import com.gateway.paymentgateway.repository.UserRepository;
+import com.gateway.paymentgateway.entity.*;
+import com.gateway.paymentgateway.repository.*;
 import com.razorpay.Order;
 import com.razorpay.RazorpayClient;
 import lombok.RequiredArgsConstructor;
@@ -13,6 +9,8 @@ import org.json.JSONObject;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -20,16 +18,18 @@ public class PaymentService {
 
     private final RazorpayClient razorpayClient;
     private final PaymentRepository paymentRepo;
+    private final UserRepository userRepo;
     private final UserKycRepository kycRepo;
-    private final UserRepository userRepository;
 
-    // ============================
-    // ✅ CREATE PAYMENT ORDER (MAIN LOGIC)
-    // ============================
-    public Payment createOrder(User user, Double amount) {
+    // =========================================
+    // ✅ CREATE PAYMENT (BACKEND ONLY)
+    // =========================================
+    public Map<String, Object> createPayment(String email, Double amount) {
 
-        // 🔐 KYC CHECK
-        var kyc = kycRepo.findByUserId(user.getId())
+        User user = userRepo.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        UserKyc kyc = kycRepo.findByUserId(user.getId())
                 .orElseThrow(() -> new RuntimeException("KYC not submitted"));
 
         if (kyc.getStatus() != KycStatus.APPROVED) {
@@ -38,7 +38,7 @@ public class PaymentService {
 
         try {
             JSONObject options = new JSONObject();
-            options.put("amount", amount * 100); // Razorpay works in paise
+            options.put("amount", amount.intValue() * 100); // paise
             options.put("currency", "INR");
             options.put("receipt", "rcpt_" + System.currentTimeMillis());
 
@@ -52,34 +52,33 @@ public class PaymentService {
             payment.setStatus("CREATED");
             payment.setCreatedAt(LocalDateTime.now());
 
-            return paymentRepo.save(payment);
+            paymentRepo.save(payment);
+
+            // ✅ JSON response (frontend/mobile will use this)
+            Map<String, Object> response = new HashMap<>();
+            response.put("orderId", order.get("id"));
+            response.put("amount", amount);
+            response.put("currency", "INR");
+            response.put("status", "CREATED");
+            response.put("razorpayKey", "rzp_test_S9Ef1TcXxY5LmI");
+
+            return response;
 
         } catch (Exception e) {
-            throw new RuntimeException("Payment creation failed", e);
+            throw new RuntimeException("Razorpay payment creation failed", e);
         }
     }
 
-    // ============================
-    // ✅ CREATE PAYMENT ORDER (FROM CONTROLLER)
-    // ============================
-    public Payment createOrder(String email, Double amount) {
-
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-
-        // 🔁 Delegate to existing logic
-        return createOrder(user, amount);
-    }
-
-    // ============================
-    // ✅ VERIFY PAYMENT (WEBHOOK)
-    // ============================
+    // =========================================
+    // ✅ MARK PAYMENT SUCCESS (WEBHOOK)
+    // =========================================
     public void markPaymentSuccess(String orderId, String paymentId) {
 
-        Payment payment = paymentRepo.findByRazorpayOrderId(orderId);
+        Payment payment =
+                paymentRepo.findByRazorpayOrderId(orderId);
 
         if (payment == null) {
-            throw new RuntimeException("Payment not found");
+            throw new RuntimeException("Payment not found for orderId: " + orderId);
         }
 
         payment.setRazorpayPaymentId(paymentId);
