@@ -3,11 +3,20 @@ package com.gateway.paymentgateway.controller;
 import com.gateway.paymentgateway.dto.response.KycAdminResponse;
 import com.gateway.paymentgateway.dto.response.UserResponse;
 import com.gateway.paymentgateway.entity.Payment;
+import com.gateway.paymentgateway.service.PaymentService;
+
+
 import com.gateway.paymentgateway.repository.PaymentRepository;
 import com.gateway.paymentgateway.service.AdminService;
+import com.gateway.paymentgateway.service.PaymentService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+// ✅ THIS WAS MISSING
+
 
 import java.util.List;
 
@@ -16,6 +25,8 @@ import java.util.List;
 @RequiredArgsConstructor
 @PreAuthorize("hasRole('ADMIN')")
 public class AdminController {
+
+    private final PaymentService paymentService;
 
     private final AdminService adminService;
     private final PaymentRepository paymentRepository;
@@ -84,4 +95,12 @@ public class AdminController {
     ) {
         return paymentRepository.findByUserId(userId);
     }
+    @PostMapping("/payments/refund/{paymentId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public String approveRefund(@PathVariable Long paymentId) {
+
+        paymentService.approveAndRefund(paymentId);
+        return "Refund processed successfully";
+    }
+
 }

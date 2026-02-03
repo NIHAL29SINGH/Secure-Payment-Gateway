@@ -2,6 +2,7 @@ package com.gateway.paymentgateway.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+
 import java.time.LocalDateTime;
 
 @Entity
@@ -22,12 +23,16 @@ public class Payment {
     private Double amount;
     private String currency;
 
-    private String status; // CREATED, SUCCESS, FAILED
+    private String status; // CREATED, SUCCESS, REFUNDED
 
-    private String receiver;
+    @Enumerated(EnumType.STRING)
+    private RefundStatus refundStatus; // REQUESTED, APPROVED, REFUNDED
 
-    private LocalDateTime createdAt;
+    private LocalDateTime refundRequestedAt;
+    private LocalDateTime refundedAt;
 
     @ManyToOne
     private User user;
+
+    private LocalDateTime createdAt;
 }

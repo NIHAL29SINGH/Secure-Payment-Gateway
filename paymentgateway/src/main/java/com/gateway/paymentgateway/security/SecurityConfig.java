@@ -22,17 +22,17 @@ public class SecurityConfig {
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 
         http
-                // ❌ Disable CSRF (JWT based APIs)
+                // ❌ Disable CSRF (JWT based)
                 .csrf(csrf -> csrf.disable())
 
-                // ❌ No sessions (JWT = stateless)
+                // ❌ Stateless session
                 .sessionManagement(sm ->
                         sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
                 // 🔐 Authorization rules
                 .authorizeHttpRequests(auth -> auth
 
-                        // ✅ Swagger (VERY IMPORTANT)
+                        // ✅ Swagger
                         .requestMatchers(
                                 "/swagger-ui/**",
                                 "/v3/api-docs/**",
@@ -42,17 +42,24 @@ public class SecurityConfig {
                         // ✅ Auth APIs
                         .requestMatchers("/api/auth/**").permitAll()
 
-                        // ✅ Razorpay Webhook (Razorpay servers call this)
+                        // ✅ Razorpay webhook
                         .requestMatchers("/api/payment/webhook").permitAll()
+
+                        // ✅ Razorpay checkout page (NO JWT)
+                        .requestMatchers(
+                                "/pay",
+                                "/favicon.ico",
+                                "/error"
+                        ).permitAll()
 
                         // 🔐 Admin only
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
 
-                        // 🔐 Everything else needs JWT
+                        // 🔐 Everything else requires JWT
                         .anyRequest().authenticated()
                 )
 
-                // ✅ JWT Filter
+                // ✅ JWT filter
                 .addFilterBefore(
                         jwtFilter,
                         UsernamePasswordAuthenticationFilter.class

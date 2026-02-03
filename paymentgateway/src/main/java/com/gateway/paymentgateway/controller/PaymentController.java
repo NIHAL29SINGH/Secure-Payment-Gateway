@@ -21,7 +21,7 @@ public class PaymentController {
     private final UserRepository userRepository;
     private final PaymentRepository paymentRepository;
 
-    // ✅ BACKEND-ONLY PAYMENT CREATION
+    // ✅ CREATE PAYMENT
     @PostMapping("/create")
     public Map<String, Object> createPayment(
             @AuthenticationPrincipal UserDetails principal,
@@ -32,14 +32,25 @@ public class PaymentController {
                 amount
         );
     }
+
+    // ✅ PAYMENT HISTORY
     @GetMapping("/history")
     public List<Payment> getMyPayments(
             @AuthenticationPrincipal UserDetails principal
     ) {
-
         var user = userRepository.findByEmail(principal.getUsername())
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
         return paymentRepository.findByUserId(user.getId());
     }
+
+    @PostMapping("/refund/request")
+    public String requestRefund(
+            @AuthenticationPrincipal UserDetails principal,
+            @RequestParam Long paymentId
+    ) {
+        paymentService.requestRefund(paymentId, principal.getUsername());
+        return "Refund request sent to admin";
+    }
+
 }
