@@ -14,27 +14,16 @@ public class RazorpayPageController {
 
     private final PaymentService paymentService;
 
-    /**
-     * Open Razorpay checkout for an EXISTING order
-     * URL: /pay?orderId=order_xxxxx
-     * No JWT / No Auth required
-     */
+    // ✅ PAY EXISTING ORDER
     @GetMapping("/pay")
     public String payExistingOrder(
             @RequestParam("orderId") String orderId,
             Model model
     ) {
-
         Payment payment = paymentService.getPaymentByOrderId(orderId);
 
         if (payment == null) {
-            throw new RuntimeException("Invalid or unknown orderId: " + orderId);
-        }
-
-        if (!"CREATED".equals(payment.getStatus())) {
-            throw new RuntimeException(
-                    "Payment already processed. Status = " + payment.getStatus()
-            );
+            throw new RuntimeException("Invalid order ID");
         }
 
         model.addAttribute("orderId", payment.getRazorpayOrderId());
