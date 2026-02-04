@@ -1,5 +1,6 @@
 package com.gateway.paymentgateway.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -38,6 +39,8 @@ public class Payment {
     private LocalDateTime refundRequestedAt;
     private LocalDateTime refundedAt;
 
+
+    @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
     private User user;
 

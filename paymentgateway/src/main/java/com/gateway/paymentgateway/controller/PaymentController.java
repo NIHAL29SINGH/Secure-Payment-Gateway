@@ -21,6 +21,7 @@ public class PaymentController {
     private final UserRepository userRepository;
     private final PaymentRepository paymentRepository;
 
+    // ✅ USER PROVIDES IDEMPOTENCY KEY
     @PostMapping("/create")
     public Map<String, Object> createPayment(
             @AuthenticationPrincipal UserDetails principal,

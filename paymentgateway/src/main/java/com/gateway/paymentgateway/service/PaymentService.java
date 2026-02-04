@@ -21,6 +21,12 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
+import com.lowagie.text.*;
+import com.lowagie.text.pdf.PdfWriter;
+import org.springframework.security.crypto.password.PasswordEncoder;
+
+import java.io.ByteArrayOutputStream;
+import java.util.List;
 
 @Service
 @Transactional
@@ -291,4 +297,89 @@ public class PaymentService {
     public String getRazorpayKey() {
         return razorpayKey;
     }
+
+
+    @Transactional(readOnly = true)
+    public void sendInvoicePdf(
+            String email,
+            String rawPassword,
+            PasswordEncoder passwordEncoder
+    ) {
+
+        User user = userRepo.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        if (!passwordEncoder.matches(rawPassword, user.getPassword())) {
+            throw new RuntimeException("Invalid email or password");
+        }
+
+        List<Payment> payments =
+                paymentRepo.findAllByUserEmailOrderByCreatedAtDesc(email);
+
+        if (payments.isEmpty()) {
+            throw new RuntimeException("No payments found");
+        }
+
+        long success = payments.stream()
+                .filter(p -> p.getStatus() == PaymentStatus.SUCCESS)
+                .count();
+
+        long refunded = payments.stream()
+                .filter(p -> p.getStatus() == PaymentStatus.REFUNDED)
+                .count();
+
+        double totalPaid = payments.stream()
+                .filter(p -> p.getStatus() == PaymentStatus.SUCCESS)
+                .mapToDouble(Payment::getAmount)
+                .sum();
+
+        // =====================
+        // 📄 CREATE PDF
+        // =====================
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        Document document = new Document();
+        PdfWriter.getInstance(document, outputStream);
+        document.open();
+
+        Font titleFont = new Font(Font.HELVETICA, 18, Font.BOLD);
+        Font normalFont = new Font(Font.HELVETICA, 11);
+
+        document.add(new Paragraph("PAYMENT INVOICE", titleFont));
+        document.add(new Paragraph(" "));
+        document.add(new Paragraph("Name: " + user.getName(), normalFont));
+        document.add(new Paragraph("Email: " + user.getEmail(), normalFont));
+        document.add(new Paragraph(" "));
+        document.add(new Paragraph("Total Payments: " + payments.size(), normalFont));
+        document.add(new Paragraph("Successful Payments: " + success, normalFont));
+        document.add(new Paragraph("Refunded Payments: " + refunded, normalFont));
+        document.add(new Paragraph("Total Amount Paid: ₹" + totalPaid, normalFont));
+        document.add(new Paragraph(" "));
+
+        document.add(new Paragraph("TRANSACTION DETAILS", titleFont));
+        document.add(new Paragraph(" "));
+
+        for (Payment p : payments) {
+            document.add(new Paragraph("--------------------------------------"));
+            document.add(new Paragraph("Order ID: " + p.getRazorpayOrderId()));
+            document.add(new Paragraph("Amount: ₹" + p.getAmount()));
+            document.add(new Paragraph("Status: " + p.getStatus()));
+            document.add(new Paragraph("Refund Status: " + p.getRefundStatus()));
+            document.add(new Paragraph("Date: " + p.getCreatedAt()));
+        }
+
+        document.close();
+
+        // =====================
+        // 📧 SEND EMAIL WITH PDF
+        // =====================
+        emailService.sendWithAttachment(
+                email,
+                "Your Payment Invoice",
+                "Please find attached your payment invoice.",
+                outputStream.toByteArray(),
+                "invoice.pdf"
+        );
+    }
+
+
 }
