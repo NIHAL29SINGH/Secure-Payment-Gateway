@@ -1,44 +1,104 @@
 package com.gateway.paymentgateway.service;
 
-import com.gateway.paymentgateway.entity.KycStatus;
-import com.gateway.paymentgateway.entity.Payment;
-import com.gateway.paymentgateway.entity.RefundStatus;
-import com.gateway.paymentgateway.entity.User;
-import com.gateway.paymentgateway.entity.UserKyc;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.gateway.paymentgateway.entity.*;
 import com.gateway.paymentgateway.repository.PaymentRepository;
 import com.gateway.paymentgateway.repository.UserKycRepository;
 import com.gateway.paymentgateway.repository.UserRepository;
 import com.razorpay.Order;
 import com.razorpay.RazorpayClient;
-import com.razorpay.Refund;
-import lombok.RequiredArgsConstructor;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.json.JSONObject;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
 
 @Service
-@RequiredArgsConstructor
 public class PaymentService {
+
+    private static final String IDEM_PREFIX = "idem:";
 
     private final RazorpayClient razorpayClient;
     private final PaymentRepository paymentRepo;
     private final UserRepository userRepo;
     private final UserKycRepository kycRepo;
+    private final RedisTemplate<String, String> redisTemplate;
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    private final Counter paymentSuccessCounter;
+    private final Counter paymentFailureCounter;
 
     @Value("${razorpay.key.id}")
     private String razorpayKey;
 
-    // =========================================
-    // ✅ CREATE PAYMENT / ORDER
-    // =========================================
-    public Map<String, Object> createPayment(String email, Double amount) {
+    public PaymentService(
+            RazorpayClient razorpayClient,
+            PaymentRepository paymentRepo,
+            UserRepository userRepo,
+            UserKycRepository kycRepo,
+            RedisTemplate<String, String> redisTemplate,
+            MeterRegistry meterRegistry
+    ) {
+        this.razorpayClient = razorpayClient;
+        this.paymentRepo = paymentRepo;
+        this.userRepo = userRepo;
+        this.kycRepo = kycRepo;
+        this.redisTemplate = redisTemplate;
 
-        if (amount == null || amount <= 0) {
-            throw new RuntimeException("Invalid payment amount");
+        this.paymentSuccessCounter =
+                meterRegistry.counter("payments.success");
+        this.paymentFailureCounter =
+                meterRegistry.counter("payments.failure");
+    }
+
+    // =========================================
+    // 🔐 STATE MACHINE GUARD
+    // =========================================
+    private void updateStatus(Payment payment, PaymentStatus next) {
+        PaymentStateMachine.validate(payment.getStatus(), next);
+        payment.setStatus(next);
+        paymentRepo.save(payment);
+    }
+
+    // =========================================
+    // ✅ FIX: FETCH PAYMENT BY ORDER ID
+    // =========================================
+    public Payment getPaymentByOrderId(String orderId) {
+        return paymentRepo.findByRazorpayOrderId(orderId);
+    }
+
+    // =========================================
+    // ✅ IDEMPOTENT CREATE PAYMENT
+    // =========================================
+    public Map<String, Object> createPayment(
+            String email,
+            Double amount,
+            String idempotencyKey
+    ) {
+
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            throw new RuntimeException("Idempotency-Key header is required");
+        }
+
+        String redisKey = IDEM_PREFIX + idempotencyKey;
+
+        String cached = redisTemplate.opsForValue().get(redisKey);
+        if (cached != null) {
+            try {
+                return objectMapper.readValue(
+                        cached,
+                        new TypeReference<>() {}
+                );
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to read idempotent cache", e);
+            }
         }
 
         User user = userRepo.findByEmail(email)
@@ -53,7 +113,7 @@ public class PaymentService {
 
         try {
             JSONObject options = new JSONObject();
-            options.put("amount", (int) (amount * 100)); // paise
+            options.put("amount", (int) (amount * 100));
             options.put("currency", "INR");
             options.put("receipt", "rcpt_" + System.currentTimeMillis());
 
@@ -61,49 +121,53 @@ public class PaymentService {
 
             Payment payment = new Payment();
             payment.setUser(user);
-            payment.setAmount(amount); // rupees
+            payment.setAmount(amount);
             payment.setCurrency("INR");
             payment.setRazorpayOrderId(order.get("id"));
-            payment.setStatus("CREATED");
+            payment.setStatus(PaymentStatus.CREATED);
             payment.setCreatedAt(LocalDateTime.now());
+            payment.setIdempotencyKey(idempotencyKey);
 
             paymentRepo.save(payment);
 
             Map<String, Object> response = new HashMap<>();
             response.put("orderId", order.get("id"));
-            response.put("amount", order.get("amount")); // paise
+            response.put("amount", order.get("amount"));
             response.put("currency", "INR");
             response.put("razorpayKey", razorpayKey);
+            response.put("idempotent", false);
+
+            redisTemplate.opsForValue().set(
+                    redisKey,
+                    objectMapper.writeValueAsString(response),
+                    Duration.ofMinutes(15)
+            );
 
             return response;
 
         } catch (Exception e) {
+            paymentFailureCounter.increment();
             throw new RuntimeException("Razorpay order creation failed", e);
         }
     }
 
     // =========================================
-    // ✅ FIND PAYMENT BY ORDER ID
-    // =========================================
-    public Payment getPaymentByOrderId(String orderId) {
-        return paymentRepo.findByRazorpayOrderId(orderId);
-    }
-
-    // =========================================
-    // ✅ WEBHOOK: PAYMENT SUCCESS
+    // ✅ WEBHOOK SUCCESS
     // =========================================
     public void markPaymentSuccess(String orderId, String paymentId) {
 
         Payment payment = paymentRepo.findByRazorpayOrderId(orderId);
 
         if (payment == null) {
-            throw new RuntimeException("Payment not found for orderId: " + orderId);
+            throw new RuntimeException("Payment not found");
         }
 
         payment.setRazorpayPaymentId(paymentId);
-        payment.setStatus("SUCCESS");
 
-        paymentRepo.save(payment);
+        updateStatus(payment, PaymentStatus.CAPTURED);
+        updateStatus(payment, PaymentStatus.SUCCESS);
+
+        paymentSuccessCounter.increment();
     }
 
     // =========================================
@@ -118,16 +182,16 @@ public class PaymentService {
             throw new RuntimeException("Unauthorized refund request");
         }
 
-        if (!"SUCCESS".equals(payment.getStatus())) {
-            throw new RuntimeException("Only successful payments can be refunded");
+        if (payment.getStatus() != PaymentStatus.SUCCESS) {
+            throw new RuntimeException("Only SUCCESS payments can be refunded");
         }
+
+        updateStatus(payment, PaymentStatus.REFUND_REQUESTED);
 
         payment.setRefundStatus(RefundStatus.REQUESTED);
         payment.setRefundRequestedAt(LocalDateTime.now());
 
         paymentRepo.save(payment);
-
-        System.out.println("REFUND REQUESTED for payment ID: " + paymentId);
     }
 
     // =========================================
@@ -138,23 +202,22 @@ public class PaymentService {
         Payment payment = paymentRepo.findById(paymentId)
                 .orElseThrow(() -> new RuntimeException("Payment not found"));
 
-        if (payment.getRefundStatus() != RefundStatus.REQUESTED) {
+        if (payment.getStatus() != PaymentStatus.REFUND_REQUESTED) {
             throw new RuntimeException("Refund not requested");
-        }
-
-        if (payment.getRazorpayPaymentId() == null) {
-            throw new RuntimeException("Payment not captured yet");
         }
 
         try {
             JSONObject options = new JSONObject();
             options.put("amount", (int) (payment.getAmount() * 100));
 
-            Refund refund = razorpayClient.payments
-                    .refund(payment.getRazorpayPaymentId(), options);
+            razorpayClient.payments.refund(
+                    payment.getRazorpayPaymentId(),
+                    options
+            );
+
+            updateStatus(payment, PaymentStatus.REFUNDED);
 
             payment.setRefundStatus(RefundStatus.REFUNDED);
-            payment.setStatus("REFUNDED");
             payment.setRefundedAt(LocalDateTime.now());
 
             paymentRepo.save(payment);
@@ -164,14 +227,7 @@ public class PaymentService {
         }
     }
 
-    // =========================================
-    // ✅ HELPERS
-    // =========================================
     public String getRazorpayKey() {
         return razorpayKey;
-    }
-
-    public Map<String, Object> createOrder(String email, Double amount) {
-        return createPayment(email, amount);
     }
 }

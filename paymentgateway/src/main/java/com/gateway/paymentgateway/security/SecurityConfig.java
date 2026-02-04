@@ -22,12 +22,12 @@ public class SecurityConfig {
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 
         http
-                // ❌ Disable CSRF (JWT based)
+                // ❌ Disable CSRF (JWT + APIs)
                 .csrf(csrf -> csrf.disable())
 
-                // ❌ Stateless session
-                .sessionManagement(sm ->
-                        sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                // ❌ Stateless (JWT)
+                .sessionManagement(session ->
+                        session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
                 // 🔐 Authorization rules
                 .authorizeHttpRequests(auth -> auth
@@ -39,27 +39,30 @@ public class SecurityConfig {
                                 "/swagger-ui.html"
                         ).permitAll()
 
+                        // ✅ Actuator (Prometheus / Grafana)
+                        .requestMatchers("/actuator/**").permitAll()
+
                         // ✅ Auth APIs
                         .requestMatchers("/api/auth/**").permitAll()
 
-                        // ✅ Razorpay webhook
+                        // ✅ Razorpay Webhook (called by Razorpay servers)
                         .requestMatchers("/api/payment/webhook").permitAll()
 
-                        // ✅ Razorpay checkout page (NO JWT)
+                        // ✅ Razorpay Checkout UI (NO JWT)
                         .requestMatchers(
                                 "/pay",
-                                "/favicon.ico",
-                                "/error"
+                                "/error",
+                                "/favicon.ico"
                         ).permitAll()
 
-                        // 🔐 Admin only
+                        // 🔐 Admin APIs
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
 
                         // 🔐 Everything else requires JWT
                         .anyRequest().authenticated()
                 )
 
-                // ✅ JWT filter
+                // ✅ JWT Filter
                 .addFilterBefore(
                         jwtFilter,
                         UsernamePasswordAuthenticationFilter.class

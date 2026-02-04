@@ -10,7 +10,12 @@ import java.time.LocalDateTime;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-@Table(name = "payments")
+@Table(
+        name = "payments",
+        uniqueConstraints = {
+                @UniqueConstraint(columnNames = "idempotencyKey")
+        }
+)
 public class Payment {
 
     @Id
@@ -23,16 +28,21 @@ public class Payment {
     private Double amount;
     private String currency;
 
-    private String status; // CREATED, SUCCESS, REFUNDED
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private PaymentStatus status;
 
     @Enumerated(EnumType.STRING)
-    private RefundStatus refundStatus; // REQUESTED, APPROVED, REFUNDED
+    private RefundStatus refundStatus;
 
     private LocalDateTime refundRequestedAt;
     private LocalDateTime refundedAt;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     private User user;
 
     private LocalDateTime createdAt;
+
+    @Column(nullable = false, unique = true)
+    private String idempotencyKey;
 }

@@ -21,19 +21,19 @@ public class PaymentController {
     private final UserRepository userRepository;
     private final PaymentRepository paymentRepository;
 
-    // ✅ CREATE PAYMENT
     @PostMapping("/create")
     public Map<String, Object> createPayment(
             @AuthenticationPrincipal UserDetails principal,
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
             @RequestParam Double amount
     ) {
         return paymentService.createPayment(
                 principal.getUsername(),
-                amount
+                amount,
+                idempotencyKey
         );
     }
 
-    // ✅ PAYMENT HISTORY
     @GetMapping("/history")
     public List<Payment> getMyPayments(
             @AuthenticationPrincipal UserDetails principal
@@ -52,5 +52,4 @@ public class PaymentController {
         paymentService.requestRefund(paymentId, principal.getUsername());
         return "Refund request sent to admin";
     }
-
 }
