@@ -86,21 +86,6 @@ public class AdminController {
     }
 
 
-    // ==============================
-    // ✅ ADMIN: USER PAYMENT HISTORY
-    // ==============================
-    @GetMapping("/payments/{userId}")
-    public List<Payment> getUserPayments(
-            @PathVariable Long userId
-    ) {
-        return paymentRepository.findByUserId(userId);
-    }
-    @PostMapping("/payments/refund/{paymentId}")
-    @PreAuthorize("hasRole('ADMIN')")
-    public String approveRefund(@PathVariable Long paymentId) {
 
-        paymentService.approveAndRefund(paymentId);
-        return "Refund processed successfully";
-    }
 
 }

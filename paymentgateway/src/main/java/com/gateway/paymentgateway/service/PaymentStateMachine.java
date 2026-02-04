@@ -17,7 +17,10 @@ public final class PaymentStateMachine {
         switch (current) {
 
             case CREATED -> {
+                // Razorpay webhook may jump directly to CAPTURED
                 if (next != PaymentStatus.PAYMENT_INITIATED &&
+                        next != PaymentStatus.AUTHORIZED &&
+                        next != PaymentStatus.CAPTURED &&
                         next != PaymentStatus.FAILED) {
                     invalid(current, next);
                 }
@@ -49,12 +52,13 @@ public final class PaymentStateMachine {
             }
 
             case REFUND_REQUESTED -> {
-                if (next != PaymentStatus.REFUNDED) {
+                if (next != PaymentStatus.REFUNDED &&
+                        next != PaymentStatus.REFUND_REJECTED) {
                     invalid(current, next);
                 }
             }
 
-            case FAILED, REFUNDED -> {
+            case FAILED, REFUNDED, REFUND_REJECTED -> {
                 throw new IllegalStateException(
                         "No transitions allowed from final state: " + current
                 );

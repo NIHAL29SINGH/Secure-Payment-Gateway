@@ -8,12 +8,14 @@ import com.gateway.paymentgateway.repository.UserKycRepository;
 import com.gateway.paymentgateway.repository.UserRepository;
 import com.razorpay.Order;
 import com.razorpay.RazorpayClient;
+import com.razorpay.RazorpayException;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.json.JSONObject;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -21,6 +23,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 @Service
+@Transactional
 public class PaymentService {
 
     private static final String IDEM_PREFIX = "idem:";
@@ -30,6 +33,8 @@ public class PaymentService {
     private final UserRepository userRepo;
     private final UserKycRepository kycRepo;
     private final RedisTemplate<String, String> redisTemplate;
+    private final EmailService emailService;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final Counter paymentSuccessCounter;
@@ -44,13 +49,15 @@ public class PaymentService {
             UserRepository userRepo,
             UserKycRepository kycRepo,
             RedisTemplate<String, String> redisTemplate,
-            MeterRegistry meterRegistry
+            MeterRegistry meterRegistry,
+            EmailService emailService
     ) {
         this.razorpayClient = razorpayClient;
         this.paymentRepo = paymentRepo;
         this.userRepo = userRepo;
         this.kycRepo = kycRepo;
         this.redisTemplate = redisTemplate;
+        this.emailService = emailService;
 
         this.paymentSuccessCounter =
                 meterRegistry.counter("payments.success");
@@ -64,18 +71,10 @@ public class PaymentService {
     private void updateStatus(Payment payment, PaymentStatus next) {
         PaymentStateMachine.validate(payment.getStatus(), next);
         payment.setStatus(next);
-        paymentRepo.save(payment);
     }
 
     // =========================================
-    // ✅ FIX: FETCH PAYMENT BY ORDER ID
-    // =========================================
-    public Payment getPaymentByOrderId(String orderId) {
-        return paymentRepo.findByRazorpayOrderId(orderId);
-    }
-
-    // =========================================
-    // ✅ IDEMPOTENT CREATE PAYMENT
+    // ✅ CREATE PAYMENT
     // =========================================
     public Map<String, Object> createPayment(
             String email,
@@ -89,17 +88,15 @@ public class PaymentService {
 
         String redisKey = IDEM_PREFIX + idempotencyKey;
 
-        String cached = redisTemplate.opsForValue().get(redisKey);
-        if (cached != null) {
-            try {
+        try {
+            String cached = redisTemplate.opsForValue().get(redisKey);
+            if (cached != null) {
                 return objectMapper.readValue(
                         cached,
                         new TypeReference<>() {}
                 );
-            } catch (Exception e) {
-                throw new RuntimeException("Failed to read idempotent cache", e);
             }
-        }
+        } catch (Exception ignored) {}
 
         User user = userRepo.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));
@@ -135,7 +132,6 @@ public class PaymentService {
             response.put("amount", order.get("amount"));
             response.put("currency", "INR");
             response.put("razorpayKey", razorpayKey);
-            response.put("idempotent", false);
 
             redisTemplate.opsForValue().set(
                     redisKey,
@@ -164,38 +160,18 @@ public class PaymentService {
 
         payment.setRazorpayPaymentId(paymentId);
 
-        updateStatus(payment, PaymentStatus.CAPTURED);
+        if (payment.getStatus() == PaymentStatus.CREATED) {
+            payment.setStatus(PaymentStatus.CAPTURED);
+        }
+
         updateStatus(payment, PaymentStatus.SUCCESS);
+        paymentRepo.save(payment);
 
         paymentSuccessCounter.increment();
     }
 
     // =========================================
-    // ✅ USER REQUEST REFUND
-    // =========================================
-    public void requestRefund(Long paymentId, String email) {
-
-        Payment payment = paymentRepo.findById(paymentId)
-                .orElseThrow(() -> new RuntimeException("Payment not found"));
-
-        if (!payment.getUser().getEmail().equals(email)) {
-            throw new RuntimeException("Unauthorized refund request");
-        }
-
-        if (payment.getStatus() != PaymentStatus.SUCCESS) {
-            throw new RuntimeException("Only SUCCESS payments can be refunded");
-        }
-
-        updateStatus(payment, PaymentStatus.REFUND_REQUESTED);
-
-        payment.setRefundStatus(RefundStatus.REQUESTED);
-        payment.setRefundRequestedAt(LocalDateTime.now());
-
-        paymentRepo.save(payment);
-    }
-
-    // =========================================
-    // ✅ ADMIN APPROVE & REFUND
+    // ✅ ADMIN APPROVE REFUND (FIXED)
     // =========================================
     public void approveAndRefund(Long paymentId) {
 
@@ -216,15 +192,45 @@ public class PaymentService {
             );
 
             updateStatus(payment, PaymentStatus.REFUNDED);
-
             payment.setRefundStatus(RefundStatus.REFUNDED);
             payment.setRefundedAt(LocalDateTime.now());
 
             paymentRepo.save(payment);
 
-        } catch (Exception e) {
-            throw new RuntimeException("Refund failed", e);
+            emailService.send(
+                    payment.getUser().getEmail(),
+                    "Refund Completed",
+                    "Refund completed for Order ID: " +
+                            payment.getRazorpayOrderId()
+            );
+
+        } catch (RazorpayException e) {
+            throw new RuntimeException("Razorpay refund failed", e);
         }
+    }
+
+    // =========================================
+    // ❌ ADMIN REJECT REFUND
+    // =========================================
+    public void rejectRefund(Long paymentId, String reason) {
+
+        Payment payment = paymentRepo.findById(paymentId)
+                .orElseThrow(() -> new RuntimeException("Payment not found"));
+
+        if (payment.getStatus() != PaymentStatus.REFUND_REQUESTED) {
+            throw new RuntimeException("Refund not in requested state");
+        }
+
+        updateStatus(payment, PaymentStatus.REFUND_REJECTED);
+        payment.setRefundStatus(RefundStatus.REJECTED);
+
+        paymentRepo.save(payment);
+
+        emailService.send(
+                payment.getUser().getEmail(),
+                "Refund Rejected",
+                "Reason: " + reason
+        );
     }
 
     public String getRazorpayKey() {

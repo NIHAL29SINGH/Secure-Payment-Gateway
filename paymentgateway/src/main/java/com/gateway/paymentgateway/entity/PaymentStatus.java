@@ -2,13 +2,14 @@ package com.gateway.paymentgateway.entity;
 
 public enum PaymentStatus {
 
-    CREATED,            // Order created
-    PAYMENT_INITIATED,  // Checkout opened
-    AUTHORIZED,         // Razorpay authorized
-    CAPTURED,           // Amount captured
-    SUCCESS,            // Business success
-    FAILED,             // Payment failed / cancelled
+    CREATED,
+    PAYMENT_INITIATED,
+    AUTHORIZED,
+    CAPTURED,
+    SUCCESS,
+    FAILED,
 
-    REFUND_REQUESTED,   // User requested refund
-    REFUNDED            // Refund completed
+    REFUND_REQUESTED,
+    REFUND_REJECTED,
+    REFUNDED
 }
