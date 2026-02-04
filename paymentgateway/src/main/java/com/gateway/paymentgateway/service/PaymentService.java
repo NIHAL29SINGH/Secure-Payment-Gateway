@@ -28,6 +28,9 @@ public class PaymentService {
 
     private static final String IDEM_PREFIX = "idem:";
 
+    // ✅ ADMIN EMAIL (as requested)
+    private static final String ADMIN_EMAIL = "nihallassiyt69@gmail.com";
+
     private final RazorpayClient razorpayClient;
     private final PaymentRepository paymentRepo;
     private final UserRepository userRepo;
@@ -171,7 +174,7 @@ public class PaymentService {
     }
 
     // =========================================
-    // ✅ ADMIN APPROVE REFUND (FIXED)
+    // ✅ ADMIN APPROVE REFUND
     // =========================================
     public void approveAndRefund(Long paymentId) {
 
@@ -200,8 +203,8 @@ public class PaymentService {
             emailService.send(
                     payment.getUser().getEmail(),
                     "Refund Completed",
-                    "Refund completed for Order ID: " +
-                            payment.getRazorpayOrderId()
+                    "Refund completed for Order ID: "
+                            + payment.getRazorpayOrderId()
             );
 
         } catch (RazorpayException e) {
@@ -231,6 +234,58 @@ public class PaymentService {
                 "Refund Rejected",
                 "Reason: " + reason
         );
+    }
+
+    // =========================================
+    // ✅ USER REQUEST REFUND (IDEMPOTENT + ADMIN EMAIL)
+    // =========================================
+    public void requestRefund(Long paymentId, String userEmail) {
+
+        Payment payment = paymentRepo.findById(paymentId)
+                .orElseThrow(() -> new RuntimeException("Payment not found"));
+
+        if (!payment.getUser().getEmail().equals(userEmail)) {
+            throw new RuntimeException("Unauthorized refund request");
+        }
+
+        if (payment.getRazorpayPaymentId() == null) {
+            throw new RuntimeException("Refund not allowed for unpaid payment");
+        }
+
+        if (payment.getStatus() == PaymentStatus.REFUND_REQUESTED
+                || payment.getStatus() == PaymentStatus.REFUNDED) {
+            return;
+        }
+
+        updateStatus(payment, PaymentStatus.REFUND_REQUESTED);
+        payment.setRefundStatus(RefundStatus.REQUESTED);
+
+        paymentRepo.save(payment);
+
+        // 📧 Email to USER
+        emailService.send(
+                userEmail,
+                "Refund Requested",
+                "Your refund request for Order ID "
+                        + payment.getRazorpayOrderId()
+                        + " has been sent to admin."
+        );
+
+        // 📧 Email to ADMIN
+        emailService.send(
+                ADMIN_EMAIL,
+                "New Refund Request",
+                "User: " + userEmail
+                        + "\nOrder ID: " + payment.getRazorpayOrderId()
+                        + "\nAmount: ₹" + payment.getAmount()
+        );
+    }
+
+    // =========================================
+    // ✅ GET PAYMENT BY ORDER ID
+    // =========================================
+    public Payment getPaymentByOrderId(String orderId) {
+        return paymentRepo.findByRazorpayOrderId(orderId);
     }
 
     public String getRazorpayKey() {
